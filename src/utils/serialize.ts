@@ -52,8 +52,9 @@ type MaybePopulated = {
 };
 
 function idFrom(ref: unknown): string {
+  if (ref == null) return ''; // resena huerfana (usuario/pelicula borrada): no crashear
   const r = ref as MaybePopulated;
-  if (r && typeof r === 'object' && r._id) return r._id.toString();
+  if (typeof r === 'object' && r._id) return r._id.toString();
   return (r as { toString(): string }).toString();
 }
 
