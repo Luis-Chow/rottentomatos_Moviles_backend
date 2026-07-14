@@ -29,6 +29,7 @@ export function serializeMovie(m: IMovie, scores: Scores) {
     releaseDate: m.releaseDate ?? '',
     runtime: m.runtime ?? 0,
     cast: (m.cast ?? []).map((c) => ({
+      tmdbPersonId: c.tmdbPersonId ?? 0,
       name: c.name,
       character: c.character ?? '',
       photo: c.photo ?? '',

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { Types } from 'mongoose';
 import { User } from '../models/User';
 import { Review } from '../models/Review';
 import { AuthRequest } from '../middleware/auth.middleware';
@@ -9,6 +10,27 @@ export async function getMe(req: AuthRequest, res: Response) {
   const user = await User.findById(req.userId);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
   return res.json({ user: serializeUser(user) });
+}
+
+// Perfil publico de cualquier usuario (sin email).
+export async function getUserById(req: AuthRequest, res: Response) {
+  const id = req.params.id;
+  if (!Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Identificador invalido.' });
+  }
+  const user = await User.findById(id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  const reviewsCount = await Review.countDocuments({ userId: user._id });
+  return res.json({
+    user: {
+      id: user._id.toString(),
+      name: user.name,
+      avatar: user.avatar ?? '',
+      isCritic: !!user.isCritic,
+      createdAt: user.createdAt.toISOString(),
+      reviewsCount,
+    },
+  });
 }
 
 export async function updateMe(req: AuthRequest, res: Response) {

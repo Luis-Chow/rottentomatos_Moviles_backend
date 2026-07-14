@@ -36,14 +36,14 @@ export async function listReviews(req: AuthRequest, res: Response) {
   return res.json({ reviews: reviews.map(serializeReview) });
 }
 
-export async function listMyReviews(req: AuthRequest, res: Response) {
-  const userId = req.userId!;
+// Resenas de un usuario con el resumen de la pelicula (para "Mis Reseñas" y perfiles).
+async function reviewsWithMovieByUser(userId: string | Types.ObjectId) {
   const reviews = await Review.find({ userId })
     .populate('userId', 'name avatar isCritic')
     .populate('movieId', 'title poster mediaType releaseDate')
     .sort({ createdAt: -1 });
 
-  const out = reviews.map((r) => {
+  return reviews.map((r) => {
     const base = serializeReview(r);
     const mv = r.movieId as unknown as {
       _id: { toString(): string };
@@ -64,8 +64,19 @@ export async function listMyReviews(req: AuthRequest, res: Response) {
         : undefined;
     return { ...base, movie };
   });
+}
 
-  return res.json({ reviews: out });
+export async function listMyReviews(req: AuthRequest, res: Response) {
+  return res.json({ reviews: await reviewsWithMovieByUser(req.userId!) });
+}
+
+// Resenas publicas de cualquier usuario (perfil publico).
+export async function listUserReviews(req: AuthRequest, res: Response) {
+  const id = req.params.id;
+  if (!Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Identificador invalido.' });
+  }
+  return res.json({ reviews: await reviewsWithMovieByUser(id) });
 }
 
 export async function createReview(req: AuthRequest, res: Response) {

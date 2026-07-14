@@ -3,6 +3,7 @@ import { Schema, model, Document, Types } from 'mongoose';
 export type MediaType = 'movie' | 'tv';
 
 export interface ICastMember {
+  tmdbPersonId?: number; // id de la persona en TMDB (para ver su perfil/filmografia)
   name: string;
   character?: string;
   photo?: string;
@@ -29,6 +30,7 @@ export interface IMovie extends Document {
 
 const CastSchema = new Schema<ICastMember>(
   {
+    tmdbPersonId: { type: Number, default: 0 },
     name: { type: String, required: true },
     character: { type: String, default: '' },
     photo: { type: String, default: '' },

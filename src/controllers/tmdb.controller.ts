@@ -3,7 +3,7 @@ import { Movie, MediaType } from '../models/Movie';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { serializeMovie } from '../utils/serialize';
 import { scoresForMovie } from '../utils/scores';
-import { tmdbSearch, tmdbDetails } from '../utils/tmdb';
+import { tmdbSearch, tmdbDetails, tmdbFindPersonId, tmdbPerson } from '../utils/tmdb';
 
 export async function search(req: AuthRequest, res: Response) {
   const q = req.query.q;
@@ -43,4 +43,35 @@ export async function importMovie(req: AuthRequest, res: Response) {
 
   const scores = await scoresForMovie(movie._id);
   return res.status(201).json({ movie: serializeMovie(movie, scores) });
+}
+
+// Perfil de un actor (datos + filmografia) desde TMDB.
+// Acepta ?id=<tmdbPersonId> o ?name=<nombre> (para titulos cacheados sin id de persona).
+export async function person(req: AuthRequest, res: Response) {
+  const idRaw = req.query.id;
+  const name = req.query.name;
+
+  let personId = typeof idRaw === 'string' && /^\d+$/.test(idRaw) ? Number(idRaw) : null;
+  if (!personId) {
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Falta el parametro "id" o "name".' });
+    }
+    personId = await tmdbFindPersonId(name.trim());
+    if (!personId) return res.status(404).json({ error: 'Actor no encontrado en TMDB.' });
+  }
+
+  const data = await tmdbPerson(personId);
+
+  // Marca que titulos de su filmografia ya estan en nuestra DB (igual que en /search).
+  const tmdbIds = data.credits.map((c) => c.tmdbId);
+  const existing = await Movie.find({ tmdbId: { $in: tmdbIds } }).select('tmdbId mediaType _id');
+  const map = new Map<string, string>();
+  for (const m of existing) map.set(`${m.tmdbId}-${m.mediaType}`, m._id.toString());
+
+  const credits = data.credits.map((c) => {
+    const localId = map.get(`${c.tmdbId}-${c.mediaType}`);
+    return { ...c, inLibrary: !!localId, localId };
+  });
+
+  return res.json({ person: { ...data, credits } });
 }

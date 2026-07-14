@@ -34,13 +34,13 @@ function img(path: string | null | undefined, size: string): string {
   return path ? `${env.tmdbImageBase}/${size}${path}` : '';
 }
 
-async function tmdbGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+async function tmdbGet<T>(path: string, params: Record<string, string> = {}, lang = env.tmdbLang): Promise<T> {
   if (!env.tmdbApiKey) {
     throw new Error('TMDB_API_KEY no esta configurada en el backend (.env).');
   }
   const url = new URL(`${TMDB_BASE}${path}`);
   url.searchParams.set('api_key', env.tmdbApiKey);
-  url.searchParams.set('language', env.tmdbLang);
+  url.searchParams.set('language', lang);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
   let res: Response;
@@ -115,7 +115,7 @@ interface RawDetails {
   genres?: { id: number; name: string }[];
   created_by?: { name: string }[];
   credits?: {
-    cast?: { name: string; character?: string; profile_path?: string | null }[];
+    cast?: { id: number; name: string; character?: string; profile_path?: string | null }[];
     crew?: { name: string; job?: string; profile_path?: string | null }[];
   };
   images?: { backdrops?: { file_path: string }[] };
@@ -128,6 +128,7 @@ export async function tmdbDetails(tmdbId: number, mediaType: MediaType): Promise
   });
 
   const cast: ICastMember[] = (data.credits?.cast ?? []).slice(0, 15).map((c) => ({
+    tmdbPersonId: c.id,
     name: c.name,
     character: c.character || '',
     photo: img(c.profile_path, 'w185'),
@@ -162,5 +163,111 @@ export async function tmdbDetails(tmdbId: number, mediaType: MediaType): Promise
     cast,
     directors,
     tmdbScore: data.vote_average || 0,
+  };
+}
+
+// ---- Personas (actores) ----
+
+export interface TmdbPersonCredit {
+  tmdbId: number;
+  mediaType: MediaType;
+  title: string;
+  poster?: string;
+  releaseDate?: string;
+  character?: string;
+  tmdbScore?: number;
+}
+
+export interface TmdbPersonData {
+  tmdbId: number;
+  name: string;
+  biography: string;
+  photo?: string;
+  birthday?: string;
+  deathday?: string;
+  placeOfBirth?: string;
+  knownFor?: string;
+  credits: TmdbPersonCredit[];
+}
+
+// Busca una persona por nombre y devuelve el id del mejor resultado (o null).
+export async function tmdbFindPersonId(name: string): Promise<number | null> {
+  const data = await tmdbGet<{ results: { id: number }[] }>('/search/person', {
+    query: name,
+    include_adult: 'false',
+  });
+  return data.results[0]?.id ?? null;
+}
+
+interface RawPersonCredit {
+  id: number;
+  media_type?: string;
+  title?: string;
+  name?: string;
+  poster_path?: string | null;
+  release_date?: string;
+  first_air_date?: string;
+  character?: string;
+  vote_average?: number;
+  popularity?: number;
+}
+
+interface RawPerson {
+  id: number;
+  name: string;
+  biography?: string;
+  profile_path?: string | null;
+  birthday?: string | null;
+  deathday?: string | null;
+  place_of_birth?: string | null;
+  known_for_department?: string;
+  combined_credits?: { cast?: RawPersonCredit[] };
+}
+
+export async function tmdbPerson(personId: number): Promise<TmdbPersonData> {
+  const data = await tmdbGet<RawPerson>(`/person/${personId}`, {
+    append_to_response: 'combined_credits',
+  });
+
+  // TMDB suele no tener biografia en espanol: cae al ingles como respaldo.
+  let biography = data.biography || '';
+  if (!biography && env.tmdbLang.toLowerCase() !== 'en-us') {
+    const en = await tmdbGet<RawPerson>(`/person/${personId}`, {}, 'en-US');
+    biography = en.biography || '';
+  }
+
+  // Filmografia: solo movie/tv, sin duplicados (misma serie con varios papeles),
+  // ordenada por popularidad.
+  const seen = new Set<string>();
+  const credits: TmdbPersonCredit[] = (data.combined_credits?.cast ?? [])
+    .filter((c) => c.media_type === 'movie' || c.media_type === 'tv')
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .filter((c) => {
+      const key = `${c.media_type}-${c.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 40)
+    .map((c) => ({
+      tmdbId: c.id,
+      mediaType: c.media_type as MediaType,
+      title: (c.media_type === 'tv' ? c.name : c.title) || c.title || c.name || 'Sin titulo',
+      poster: img(c.poster_path, 'w342') || undefined,
+      releaseDate: (c.media_type === 'tv' ? c.first_air_date : c.release_date) || undefined,
+      character: c.character || undefined,
+      tmdbScore: c.vote_average || undefined,
+    }));
+
+  return {
+    tmdbId: data.id,
+    name: data.name,
+    biography,
+    photo: img(data.profile_path, 'w342') || undefined,
+    birthday: data.birthday || undefined,
+    deathday: data.deathday || undefined,
+    placeOfBirth: data.place_of_birth || undefined,
+    knownFor: data.known_for_department || undefined,
+    credits,
   };
 }
