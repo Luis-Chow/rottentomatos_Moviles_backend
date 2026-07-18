@@ -1,21 +1,17 @@
 # 🍅 RottenTomatos — Backend (Express + MongoDB + JWT + TMDB)
 
-Backend REST para la app `rotten-tomatos-app`. Mismo stack y patrón que
-`recetario-app-backend` (controllers / routes / models / middleware).
+Backend REST para la app `rotten-tomatos-app`. Arquitectura por capas:
+controllers / routes / models / middleware / utils.
 
-> **Estado: scaffold.** Esta fase deja la carpeta, dependencias y el contrato de
-> API definidos. La implementación de los controladores es el siguiente paso.
-> El frontend ya consume exactamente los endpoints de abajo.
-
-## Puesta en marcha (cuando esté implementado)
+## Puesta en marcha
 
 ```bash
 npm install
-cp .env.example .env     # configura TMDB_API_KEY y, opcional, MONGODB_URI
+cp .env.example .env     # definir TMDB_API_KEY y, opcionalmente, MONGODB_URI
 npm run dev              # http://localhost:4000  (DB en RAM si no hay MONGODB_URI)
 ```
 
-Necesitas una **API Key gratuita de TMDB**: https://www.themoviedb.org/settings/api
+La integración con la API externa requiere una API Key de TMDB (v3 auth): https://developer.themoviedb.org
 
 ## Modelos (Mongoose)
 
@@ -51,7 +47,7 @@ text (string <=2000), isCritic (snapshot del rol del autor), createdAt, updatedA
   "id": "...", "tmdbId": 603, "mediaType": "movie", "title": "...",
   "overview": "...", "poster": "https://...", "backdrop": "https://...",
   "images": ["https://..."], "genres": ["Acción"], "releaseDate": "1999-03-30",
-  "runtime": 136, "cast": [{ "name": "...", "character": "...", "photo": "https://..." }],
+  "runtime": 136, "cast": [{ "tmdbPersonId": 6384, "name": "...", "character": "...", "photo": "https://..." }],
   "directors": ["..."], "tmdbScore": 8.2,
   "userScore": 4.3, "userScoreCount": 12,     // promedio de reviews con isCritic=false
   "criticScore": 4.8, "criticScoreCount": 3,  // promedio de reviews con isCritic=true
@@ -72,6 +68,8 @@ text (string <=2000), isCritic (snapshot del rol del autor), createdAt, updatedA
 - `GET /users/me` → `{ user }`
 - `PATCH /users/me` `{ name?, email?, avatar?, isCritic?, password?, currentPassword? }` → `{ user }`
 - `DELETE /users/me` → `{ ok: true }`  (borra también sus reseñas)
+- `GET /users/:id` → `{ user }`  (perfil público, sin email: `{ id, name, avatar, isCritic, createdAt, reviewsCount }`)
+- `GET /users/:id/reviews` → `{ reviews }`  (mismo formato que `/reviews/mine`)
 
 ### TMDB (API externa)
 - `GET /tmdb/search?q=...&type=movie|tv` → `{ results: TmdbResult[] }`
@@ -80,6 +78,12 @@ text (string <=2000), isCritic (snapshot del rol del autor), createdAt, updatedA
 - `POST /tmdb/import` `{ tmdbId, mediaType }` → `{ movie }`
   - Busca el detalle en TMDB (con créditos e imágenes), lo guarda en Movie si no
     existe (o devuelve el existente) y responde con la Movie serializada.
+- `GET /tmdb/person?id=<tmdbPersonId>` (o `?name=<nombre>` como respaldo) → `{ person }`
+  - `person: { tmdbId, name, biography, photo, birthday, deathday, placeOfBirth, knownFor, credits }`
+  - `credits`: filmografía (máx. 40, por popularidad), cada una
+    `{ tmdbId, mediaType, title, poster, releaseDate, character, tmdbScore, inLibrary, localId }`.
+  - Con `name`, resuelve el id vía `/search/person` (para títulos cacheados sin `tmdbPersonId`).
+  - La filmografía no se persiste; un título se guarda solo al importarlo con `/tmdb/import`.
 
 ### Catálogo (Movie)
 - `GET /movies?search=&genre=&type=&year=&minScore=&sort=score|date|title` → `{ movies }`
@@ -97,7 +101,7 @@ text (string <=2000), isCritic (snapshot del rol del autor), createdAt, updatedA
 ### Salud
 - `GET /api/health` → `{ ok: true, service: "rotten-tomatos-backend" }`
 
-## Estructura prevista (a implementar)
+## Estructura
 ```
 src/
   app.ts, server.ts
